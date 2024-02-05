@@ -10,11 +10,16 @@ let gisInited = false;
 
 //hiddent button
 document.getElementById('authorize_button').style.visibility = 'hidden';
-document.getElementById('signout_button').style.visibility = 'hidden';
-document.getElementById('read_button').style.visibility = 'hidden';
-document.getElementById('write_button').style.visibility = 'hidden';
-document.getElementById('write_append_button').style.visibility = 'hidden';
-document.getElementById('create_new_sheet_button').style.visibility = 'hidden';
+// document.getElementById('signout_button').style.visibility = 'hidden';
+// document.getElementById('read_button').style.visibility = 'hidden';
+// document.getElementById('write_button').style.visibility = 'hidden';
+// document.getElementById('write_append_button').style.visibility = 'hidden';
+// document.getElementById('create_new_sheet_button').style.visibility = 'hidden';
+document.getElementById('formInput').style.visibility = 'hidden';
+document.getElementById('information_button').style.visibility = 'hidden';
+
+
+
 
 const formatDate = (currentDate) => {
     const formattedDate = new Intl.DateTimeFormat('en-US', {
@@ -69,7 +74,25 @@ const App = {
             return;
         }
     },
-    batchUpdateValues: (spreadsheetId, range, valueInputOption, _values, callback) => {
+    insertSingleValue: (spreadsheetId, range, valueInputOption, _values, callback) => {
+        try {
+
+            gapi.client.sheets.spreadsheets.values.update({
+                spreadsheetId: spreadsheetId,
+                range: range,
+                valueInputOption: valueInputOption,
+                resource: {
+                    values: _values,
+                },
+            }).then((res) => {
+                if (callback) callback(res);
+            });
+
+        } catch (err) {
+            console.error('Error inserting single value:', err.message);
+        }
+    },
+    batchUpdateValues: async (spreadsheetId, range, valueInputOption, _values, callback) => {
         let values = [
             [
                 // Cell values ...
@@ -89,20 +112,19 @@ const App = {
             valueInputOption: valueInputOption,
         };
         try {
-            gapi.client.sheets.spreadsheets.values.batchUpdate({
+            const response = await gapi.client.sheets.spreadsheets.values.batchUpdate({
                 spreadsheetId: spreadsheetId,
                 resource: body,
-            }).then((response) => {
-                const result = response.result;
-                console.log(`${result.totalUpdatedCells} cells updated.`);
-                if (callback) callback(response);
-            });
+            })
+            const result = response.result;
+            console.log(`${result.totalUpdatedCells} cells updated.`);
+            if (callback) callback(response);
         } catch (err) {
             document.getElementById('content').innerText = err.message;
             return;
         }
     },
-    appendValues: (spreadsheetId, range, valueInputOption, _values, callback) => {
+    appendValues: async (spreadsheetId, range, valueInputOption, _values, callback) => {
         let values = [
             [
                 // Cell values ...
@@ -114,16 +136,16 @@ const App = {
             values: values,
         };
         try {
-            gapi.client.sheets.spreadsheets.values.append({
+            const response = await gapi.client.sheets.spreadsheets.values.append({
                 spreadsheetId: spreadsheetId,
                 range: range,
                 valueInputOption: valueInputOption,
                 resource: body,
-            }).then((response) => {
-                const result = response.result;
-                console.log(`${result.updates.updatedCells} cells appended.`);
-                if (callback) callback(response);
-            });
+            })
+            const result = response.result;
+            console.log(`${result.updates.updatedCells} cells appended.`);
+            if (callback) callback(response);
+
         } catch (err) {
             document.getElementById('content').innerText = err.message;
             return;
@@ -236,37 +258,52 @@ const App = {
         App.createSheet(SPREAD_SHEET_ID, 'Sheet2')
     },
     main: async () => {
-        // after login
-        document.getElementById('signout_button').style.visibility = 'visible';
-        document.getElementById('authorize_button').innerText = 'Refresh';
-        document.getElementById('read_button').style.visibility = 'visible';
-        document.getElementById('write_button').style.visibility = 'visible';
-        document.getElementById('write_append_button').style.visibility = 'visible';
-        document.getElementById('create_new_sheet_button').style.visibility = 'visible';
 
         const currentDate = formatDate(new Date());
-
         const responseSheetsList = await App.getAllSheets(SPREAD_SHEET_ID);
-
         App.sheetsList = responseSheetsList.map(sheets => sheets.properties.title);
-
 
         let indexCurrentSheets = App.sheetsList.findIndex((value) => value == currentDate);
 
+        // after login
+        document.getElementById('authorize_button').innerText = 'Refresh';
+        // document.getElementById('signout_button').style.visibility = 'visible';
+        // document.getElementById('read_button').style.visibility = 'visible';
+        // document.getElementById('write_button').style.visibility = 'visible';
+        // document.getElementById('write_append_button').style.visibility = 'visible';
+        // document.getElementById('create_new_sheet_button').style.visibility = 'visible';
+        document.getElementById('formInput').style.visibility = 'visible';
+        document.getElementById('information_button').style.visibility = 'visible';
+
+        // insert data
+        document.getElementById('currentDate').innerHTML = currentDate
+
+
+
         // create new sheets if sheets does not exist
         if (indexCurrentSheets == -1) {
-            App.createSheet(SPREAD_SHEET_ID, currentDate);
+            await App.createSheet(SPREAD_SHEET_ID, currentDate);
             App.sheetsList.push(currentDate)
             App.indexCurrentSheets = App.sheetsList.length - 1;
-            const range = App.sheetsList[App.indexCurrentSheets] + "!A1:C1"
-            console.log(range);
-            App.batchUpdateValues(
+            const currentSheets = App.sheetsList[App.indexCurrentSheets];
+            const range = currentSheets + "!A1:D1"
+            await App.batchUpdateValues(
                 SPREAD_SHEET_ID,
                 range,
                 'raw',
-                [["DATE", "COST", "CONTENT"]],
+                [["DATE", "COST", "CONTENT", "TOTAL"]],
                 (res) => {
-                    console.log("Write header: " + res);
+                    console.log("Write header");
+                }
+            )
+
+            await App.insertSingleValue(
+                SPREAD_SHEET_ID,
+                currentSheets + "!D2",
+                'USER_ENTERED',
+                [["=sum(B:B)"]],
+                (res) => {
+                    console.log("Write sum total cost");
                 }
             )
 
@@ -274,6 +311,68 @@ const App = {
             App.indexCurrentSheets = indexCurrentSheets
         }
 
+        document.getElementById("submit").addEventListener("click", (e) => {
+            e.preventDefault()
+            const costInputEle = document.getElementById("cost");
+            const contentInputEle = document.getElementById("content");
+            console.log(costInputEle.value);
+            console.log(contentInputEle.value);
+
+            const range = App.sheetsList[App.indexCurrentSheets]
+            const currentDate = new Date();
+
+            // Format the date using toLocaleString()
+            const formattedDate = currentDate.toLocaleString();
+            App.appendValues(
+                SPREAD_SHEET_ID,
+                range,
+                "USER_ENTERED",
+                [[formattedDate, parseInt(costInputEle.value, 0), contentInputEle.value]],
+                (res) => {
+                    console.log(res);
+                }
+            )
+
+            costInputEle.value = ""
+            contentInputEle.value = ""
+        })
+
+        document.getElementById("information_button").addEventListener("click", (e) => {
+            // get total 
+            App.getValues(
+                SPREAD_SHEET_ID,
+                currentSheets + "!D2",
+                (response) => {
+                    const range = response.result;
+                    if (!range || !range.values || range.values.length == 0) {
+                        console.log("No value found");
+                        return;
+                    }
+                    console.log(range);
+                    const output = range.values[0]
+                    document.getElementById('totalCost').innerText = output;
+                }
+            )
+        })
+
+
+        const currentSheets = App.sheetsList[App.indexCurrentSheets];
+
+        // get total 
+        App.getValues(
+            SPREAD_SHEET_ID,
+            currentSheets + "!D2",
+            (response) => {
+                const range = response.result;
+                if (!range || !range.values || range.values.length == 0) {
+                    document.getElementById('content').innerText = 'No values found.';
+                    return;
+                }
+                console.log(range);
+                const output = range.values[0]
+                document.getElementById('totalCost').innerText = output;
+            }
+        )
 
 
     }
